@@ -1,0 +1,112 @@
+<!-- UC Motion: Masked Text Reveal -->
+<!-- https://andreygrodz.ru/ucmotion/masked-text-reveal -->
+
+<script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/andreyGRODZ/ucmotion@main/ucmotion.core.min.js"></script>
+
+<script>
+(function(){
+  if(!window.anime || !window.UCM) return;
+
+  // ===== Крутилки =====
+  const settings = {
+    effect: 'words',          // 'lines' | 'words' | 'letters'
+    randomize: false,         // хаотичный порядок внутри строки
+    baseDelay: 200,           // мс (если Basic выключен)
+    delayBetweenLines: 60,    // мс (задержка между строками)
+    parallelLines: true,      // строки параллельно (false — последовательно)
+    parallelLineStagger: 120,  // мс (шаг старта между строками в параллели)
+    animationDuration: 600,   // мс (длительность анимации)
+    easing: 'easeOutCubic',
+    threshold: 0.4,
+    letterWordDelay: 40       // мс (задержка между словами/буквами)
+
+  };
+
+  // ===== Пробрасываем в ядро =====
+  UCM.config({
+    preferBasicDelay: true,
+    baseDelay: settings.baseDelay,
+    letterWordDelay: settings.letterWordDelay,
+    parallelLines: settings.parallelLines,
+    parallelLineStagger: settings.parallelLineStagger,
+    delayBetweenLines: settings.delayBetweenLines,
+    threshold: settings.threshold,
+    randomize: settings.randomize
+  });
+
+  // Basic neutralizer только для наших
+  UCM.util.injectBasicNeutralizerFor(['.uc-masked-text-reveal']);
+
+  // Стартовые состояния без флика
+  function primeTransforms(atom, unit){
+    if(unit==='lines'){
+      // Маской остаётся .uc-line (фикс на месте), двигаем ТОЛЬКО содержимое
+      requestAnimationFrame(()=> {
+        atom.querySelectorAll('.uc-line:not(.uc-gap)').forEach(line=>{
+          line.style.transform = 'none'; // линия не двигается
+          const kids = line.querySelectorAll('.uc-word,.uc-space,.uc-letter');
+          kids.forEach(n=>{
+            n.style.transform  = 'translateY(110%)'; // 110% чтобы не подсекалась базовая линия
+            n.style.willChange = 'transform';
+          });
+        });
+      });
+    } else {
+      const sel = unit==='letters' ? '.uc-letter' : '.uc-word,.uc-space';
+      atom.querySelectorAll(sel).forEach(n=>{
+        n.style.transform  = 'translateY(100%)';
+        n.style.willChange = 'transform';
+      });
+    }
+  }
+
+  function resetTransforms(atom){
+    atom.querySelectorAll('.uc-line,.uc-word,.uc-space,.uc-letter')
+      .forEach(n=>{ n.style.transition='none'; n.style.transform=''; n.style.willChange=''; });
+  }
+
+  UCM.register('.uc-masked-text-reveal',{
+    prepare(el,cfg,u){
+      const atom = u.getAtom(el) || el;
+      const unit = settings.effect;
+      u.ensureWrapped(atom, unit);   // сохраняет <br>, [gap], &nbsp;
+      primeTransforms(atom, unit);
+    },
+    run(el,cfg,u){
+      const atom = u.getAtom(el) || el;
+      const unit = settings.effect;
+
+      u.scheduleByLines(atom, cfg, unit, (targets, when)=>{
+        // Если пришли сами .uc-line — анимируем их детей; иначе — анимируем то, что пришло
+        const list = (Array.isArray(targets) || targets instanceof NodeList) ? Array.from(targets) : [targets];
+        let t = list;
+
+        if (unit === 'lines' && list.length && list[0].classList && list[0].classList.contains('uc-line')) {
+          t = list.flatMap(line => Array.from(line.querySelectorAll('.uc-word,.uc-space,.uc-letter')));
+        }
+
+        setTimeout(()=>anime({
+          targets: t,
+          translateY: [unit==='lines' ? '110%' : '100%', '0%'],
+          duration: settings.animationDuration,
+          easing: settings.easing,
+          complete: () => {
+            (Array.isArray(t) ? t : [t]).forEach(n => { if(n && n.style) n.style.willChange=''; });
+          }
+        }), when);
+      });
+    },
+    destroy(el){
+      const atom = el.querySelector?.('.tn-atom') || el;
+      if (atom) resetTransforms(atom);
+    }
+  });
+
+  // безопасный старт
+  const init=()=>{ try{ UCM.init('.uc-masked-text-reveal'); }catch(e){ console.warn('[UCM Masked]', e); } };
+  document.addEventListener('tilda:blocks:rendered', init, {once:true});
+  if(document.readyState!=='loading') requestAnimationFrame(init);
+  else document.addEventListener('DOMContentLoaded', ()=>requestAnimationFrame(init));
+})();
+</script>
